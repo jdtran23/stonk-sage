@@ -23,10 +23,12 @@ This document records what Copilot CLI's `task` tool and slash-command system ac
 | Staging seam: capture → write to disk → Python parses fenced JSON | ✅ Works | None |
 | `model:` in agent.md frontmatter | ⚠️ myBrain agents don't use it — pass via slash command instead | `/analyze` passes `model=` per `task` dispatch; agent.md does not need `model:` |
 | `tools:` in agent.md frontmatter | ⚠️ myBrain agents don't use it — appears advisory | Encode tool constraints as prompt-level instructions, not frontmatter |
-| Slash command argument syntax | ✅ `${input:Name}` | Confirmed by `myBrain/.github/prompts/orchestrate.prompt.md`; `/analyze` will use same |
+| Slash command argument syntax | ✅ `${input:Name}` [*] | Confirmed by `myBrain/.github/prompts/orchestrate.prompt.md`; `/analyze` will use same |
 | Per-model availability | ❓ Untested in stonk-sage session | Run a `--check-models` probe before first `/analyze` |
 
 **Overall verdict: ☑ Proceed to Task 0.1 with two surgical deltas** (Standards References → explicit `view`; model + tools → not in frontmatter).
+
+`[*]` See F9 correction below — this row was incorrect; prompt files are VS Code Chat only, not CLI. Fix applied via the analyze skill.
 
 ---
 
@@ -78,6 +80,8 @@ Standards References stays in the agent file as **documentation for humans** of 
 
 ### F9 — Slash command argument syntax: ✅ confirmed via myBrain example
 **Evidence:** `myBrain/.github/prompts/orchestrate.prompt.md` uses `${input:Describe the task to orchestrate}`. `/analyze` will use the same: `${input:Ticker}` and `${input:AsOfDate}`.
+
+> **⚠️ CORRECTION (2026-05-30, post-ship of commit aad94f5):** F9 was wrong. The "evidence" above was file inspection, not execution — I confused *"this file exists with this syntax"* with *"Copilot CLI executes this file as a slash command"*. Per the official Copilot CLI docs, loaded locations are `CLAUDE.md`, `GEMINI.md`, `AGENTS.md`, `.github/instructions/**/*.instructions.md`, `.github/copilot-instructions.md` — **no `.github/prompts/`**. `${input:...}` prompt-file slash commands are a VS Code Copilot Chat feature only. The fix landed in a follow-up commit: `analyze.prompt.md` was converted to `.github/skills/analyze/SKILL.md` (skills DO work in CLI; `/skills` is a built-in slash command). Lesson: every "confirmed" verdict in this doc requires *execution* evidence, not file-shape inspection.
 
 ### F10 — Per-model availability: ❓ untested
 **Plan delta (small):** before the first real `/analyze` run, Joe runs in stonk-sage workspace:

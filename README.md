@@ -80,10 +80,12 @@ uv run pytest -q
 Start Copilot CLI in the `stonk-sage` working directory. Then:
 
 ```
-/analyze Ticker=AAPL AsOfDate=2024-06-01
+/analyze AAPL 2024-06-01
 ```
 
-That dispatches the full 6-agent pipeline, runs the post-CIO guards, and (on pass) publishes the memo to `examples/AAPL_2024-06-01_<uuid>.md`. The slash command prints the memo back to chat so you can read it inline.
+That dispatches the full 6-agent pipeline, runs the post-CIO guards, and (on pass) publishes the memo to `examples/AAPL_2024-06-01_<uuid>.md`. The skill prints the memo back to chat so you can read it inline.
+
+`/analyze` is a project skill at `.github/skills/analyze/SKILL.md`. It's loaded by Copilot CLI's `/skills` mechanism. (Prompt files at `.github/prompts/*.prompt.md` are a VS Code Copilot Chat feature and do not work in Copilot CLI — that was the original design and it was wrong.)
 
 ### Direct data fetch (no LLM)
 
@@ -106,7 +108,7 @@ Exit code 0 on PASS, non-zero on FAIL. Failure reasons are printed line by line.
 
 ## Expected First Run
 
-A clean run on `/analyze Ticker=AAPL AsOfDate=2024-06-01` should:
+A clean run on `/analyze AAPL 2024-06-01` should:
 
 1. **Fetch step (~5–15s):** prints `data/snapshots/AAPL_2024-06-01.json`. If `EDGAR_IDENTITY` is missing you'll see an `EdgarIdentityMissing` error here — stop and set the env var.
 2. **DA → Bull/Bear/Risk → DA-critique → CIO:** chat trace shows 6 sub-agent dispatches. Run-staging directory `data/runs/AAPL_2024-06-01_<uuid>/` accumulates `da.md`, `bull.json`, `bear.json`, `risk.json`, `da_critique.json`, `cio_draft.md`.
@@ -136,8 +138,8 @@ stonk-sage/
 ├── .github/
 │   ├── agents/             # 6 agent definitions (data-analyst, bull, bear, risk-officer, devils-advocate, cio)
 │   ├── instructions/       # 10 finance brain files (the operational knowledge base)
-│   └── prompts/
-│       └── analyze.prompt.md   # the /analyze slash command
+│   └── skills/
+│       └── analyze/SKILL.md   # the /analyze skill — invoked via Copilot CLI /skills mechanism
 ├── src/stonk_sage/
 │   ├── __init__.py         # public facade
 │   ├── brain.py            # loads instruction files into agent context
@@ -180,7 +182,7 @@ Each Phase 0+1 agent `view`s the brain files relevant to its role as its first i
 ## Status
 
 - [x] **Phase 0 build:** data layer (`data.py`), 4 maker agents, 38 tests
-- [x] **Phase 1 build:** all 6 agents, `/analyze` slash command, `guards.py` with 19 tests
+- [x] **Phase 1 build:** all 6 agents, `/analyze` skill, `guards.py` with 19 tests
 - [ ] **Phase 0.5 smoke** (manual, requires Copilot CLI session in this repo): single `/analyze` run + Plan 002 § 0.5 disagreement checklist
 - [ ] **Phase 1.5 memo acceptance** (manual): 3 runs of `/analyze`, ≥2 passing
 - [ ] **v0.1.0 tag:** after both acceptance gates pass
