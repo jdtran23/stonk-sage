@@ -26,6 +26,8 @@ htmlcov/
 # Data caches (when agents are eventually built)
 data/cache/
 data/snapshots/
+data/runs/
+examples/*_latest.md.tmp
 *.parquet
 *.feather
 

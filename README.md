@@ -1,30 +1,188 @@
 # stonk-sage
 
-Knowledge base for building multi-agent stock-research and assessment systems.
+A 6-agent AI investment-research committee that runs entirely on top of GitHub Copilot's `task` tool — no third-party LLM API keys required. Built around a versioned brain of finance-domain instruction files; agents dispatch through the Copilot CLI's slash-command surface and produce a structured investment memo with hard guardrails.
 
-## What This Is
-This repo currently contains **brain directives only** — instruction files that capture finance and investing domain knowledge for use by AI agents. The actual code (agents, data layer, backtester) will come later. Knowledge first; agents built on top of it second.
+> **This is not financial advice.** stonk-sage is a research scaffolding project for experimentation. Memos are LLM output, not professional analysis. Don't trade on its output without doing your own work.
 
-## Structure
-- `.github/instructions/` — Domain knowledge as agent-loadable instructions
-  - `finance-fundamentals.instructions.md` — Financial statements, ratios, accounting, sector exceptions
-  - `equity-research.instructions.md` — End-to-end stock research methodology + edge identification + benchmark comparison
-  - `sec-filings.instructions.md` — 10-K/Q/8-K/Form 4/proxy/13F/13D/13G reference (deadlines updated post-2024)
-  - `investment-strategies.instructions.md` — Value/growth/momentum/quality/event-driven taxonomy
-  - `risk-portfolio.instructions.md` — Position sizing, risk metrics, portfolio construction
-  - `behavioral-finance.instructions.md` — Cognitive biases + counter-strategies
-  - `backtesting-methodology.instructions.md` — How not to lie to yourself with historical data
-  - `market-microstructure.instructions.md` — Order types, liquidity, options, settlement (T+1)
-  - `personal-investing-tax-basics.instructions.md` — Cap gains, wash sale, account types, US 2026
-  - `multi-agent-finance-patterns.instructions.md` — Committee architecture with hardened escalation gates
+---
 
-## Conventions
-- **Instructions** lazy-load via `description` keyword matching — they activate when an agent's context suggests the relevant domain
-- Content is **operational** (formulas + interpretation + gotchas), not academic
-- PIT-safety (point-in-time data discipline) is called out explicitly per data source
-- Common analyst traps and biases are surfaced, not buried
+## Architecture
 
-## Coming Later
-- Skills (procedural workflows: `analyze-stock`, `read-filing`, `assess-thesis`, `build-finance-committee`)
-- Agent definitions
-- Data layer + backtester
+```
+┌─────────────────┐
+│ data.py         │  yfinance + edgartools, no-look-ahead invariant
+│ (no LLM)        │  → MarketSnapshot JSON
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│ Data Analyst    │  claude-haiku-4.5 — structured digest
+└────────┬────────┘
+         ▼
+┌────────┴────────┐
+│ Bull       Bear │  claude-sonnet-4.6  |  gpt-5.4
+│ Risk Officer    │  claude-haiku-4.5    (parallel)
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│ Devil's         │  claude-opus-4.8 (different family from CIO)
+│ Advocate        │
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│ CIO             │  gpt-5.5 — final memo (Markdown + embedded JSON)
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│ guards.py       │  hard-rule re-validate + vague-edge scan
+└────────┬────────┘
+         ▼
+   examples/<TICKER>_<DATE>_<UUID>.md   (only on PASS)
+```
+
+**Cross-family invariants** (non-negotiable):
+- Bull (Claude) ≠ Bear (GPT) — prevents one-family consensus
+- Devil's Advocate (Claude) ≠ CIO (GPT) — prevents the synthesizer from rubber-stamping its own critique
+
+**No-edge ⇒ no-action** is enforced structurally by `contracts.CIOMemo`. `guards.py` re-validates after the fact and additionally fails the memo for vague prose ("brand strength", "quality compounder", etc.) without a quantitative anchor.
+
+---
+
+## Setup
+
+### Prerequisites
+- Python 3.12+
+- [uv](https://github.com/astral-sh/uv) (Windows ARM64: install via `pip install --user uv` to avoid the broken aarch64 native installer)
+- GitHub Copilot subscription (for the `task` tool that dispatches agents)
+- An `EDGAR_IDENTITY` for SEC fair-access compliance (`Your Name your.email@example.com`)
+
+### Install
+```pwsh
+git clone https://github.com/jdtran23/stonk-sage.git
+cd stonk-sage
+uv sync
+
+cp .env.example .env
+# edit .env and set EDGAR_IDENTITY — the CLI auto-loads .env via python-dotenv
+```
+
+### Verify
+```pwsh
+uv run pytest -q
+# Expect: 57 passed, 1 deselected   (live network test gated behind -m live)
+```
+
+---
+
+## Usage
+
+### One command, in Copilot CLI from this repo
+
+Start Copilot CLI in the `stonk-sage` working directory. Then:
+
+```
+/analyze Ticker=AAPL AsOfDate=2024-06-01
+```
+
+That dispatches the full 6-agent pipeline, runs the post-CIO guards, and (on pass) publishes the memo to `examples/AAPL_2024-06-01_<uuid>.md`. The slash command prints the memo back to chat so you can read it inline.
+
+### Direct data fetch (no LLM)
+
+```pwsh
+python -m stonk_sage.data fetch AAPL --as-of 2024-06-01
+# prints: data/snapshots/AAPL_2024-06-01.json
+```
+
+The snapshot is point-in-time-safe: every dated field is `<= as_of`. Weekends/holidays roll back to the prior trading day's close.
+
+### Direct guards check
+
+```pwsh
+python -m stonk_sage.guards check --run-dir data/runs/AAPL_2024-06-01_abc12345
+```
+
+Exit code 0 on PASS, non-zero on FAIL. Failure reasons are printed line by line.
+
+---
+
+## Expected First Run
+
+A clean run on `/analyze Ticker=AAPL AsOfDate=2024-06-01` should:
+
+1. **Fetch step (~5–15s):** prints `data/snapshots/AAPL_2024-06-01.json`. If `EDGAR_IDENTITY` is missing you'll see an `EdgarIdentityMissing` error here — stop and set the env var.
+2. **DA → Bull/Bear/Risk → DA-critique → CIO:** chat trace shows 6 sub-agent dispatches. Run-staging directory `data/runs/AAPL_2024-06-01_<uuid>/` accumulates `da.md`, `bull.json`, `bear.json`, `risk.json`, `da_critique.json`, `cio_draft.md`.
+3. **Guards step:** prints either `guards: PASS ✅` or `guards: FAIL ❌` with reasons. **Failure is expected sometimes** — the CIO's prose drifts into vague territory, or the Risk Officer's veto isn't honored. The fix is usually to re-run with a fresh UUID; persistent failures point at the agent prompts.
+4. **On PASS:** `examples/AAPL_2024-06-01_<uuid>.md` is written, `examples/AAPL_2024-06-01_latest.md` updated, and the memo is printed back to chat.
+
+### Phase 1 acceptance ritual
+
+Per Plan 003 § 1.5, the project considers itself "Phase 1 done" only when `/analyze` produces **≥2 passing memos out of 3 runs** on the same ticker + as_of, and each passing memo is coherent on the 6-item checklist in `myBrain/Plans/002-plan-agent-committee.md` § 1.6.
+
+### Model availability probe
+
+Before your first real run, verify all 6 models are dispatchable in your Copilot subscription:
+
+```
+Probe each of these via the task tool with a one-token prompt: claude-haiku-4.5, claude-sonnet-4.6, gpt-5.4, claude-opus-4.8, gpt-5.5. Report any errors.
+```
+
+If a model is unavailable, swap to the closest same-family successor while preserving the cross-family invariants above.
+
+---
+
+## Project Layout
+
+```
+stonk-sage/
+├── .github/
+│   ├── agents/             # 6 agent definitions (data-analyst, bull, bear, risk-officer, devils-advocate, cio)
+│   ├── instructions/       # 10 finance brain files (the operational knowledge base)
+│   └── prompts/
+│       └── analyze.prompt.md   # the /analyze slash command
+├── src/stonk_sage/
+│   ├── __init__.py         # public facade
+│   ├── brain.py            # loads instruction files into agent context
+│   ├── contracts.py        # pydantic schemas (MarketSnapshot, Thesis, RiskAssessment, ...)
+│   ├── data.py             # point-in-time market data fetcher
+│   └── guards.py           # post-CIO hard-rule + vague-edge guard
+├── tests/                  # 57 tests; live network tests gated behind -m live
+├── docs/
+│   └── dispatch-surface-findings.md   # Task 0.0 findings — see for Copilot CLI mechanics
+├── data/                   # gitignored — runtime staging
+│   ├── snapshots/
+│   └── runs/<TICKER>_<DATE>_<UUID>/
+├── examples/               # committed memo output
+└── pyproject.toml
+```
+
+---
+
+## The Brain
+
+Ten finance instruction files in `.github/instructions/` (133 inline citations, 95 Further Reading entries) cover:
+
+| File | Topic |
+|---|---|
+| `finance-fundamentals.instructions.md` | Financial statements, ratios, accounting, sector exceptions |
+| `equity-research.instructions.md` | End-to-end stock research methodology + edge identification |
+| `sec-filings.instructions.md` | 10-K/Q/8-K/Form 4/proxy/13F/13D/13G reference (post-2024 deadlines) |
+| `investment-strategies.instructions.md` | Value/growth/momentum/quality/event-driven taxonomy |
+| `risk-portfolio.instructions.md` | Position sizing, risk metrics, portfolio construction |
+| `behavioral-finance.instructions.md` | Cognitive biases + counter-strategies |
+| `backtesting-methodology.instructions.md` | How not to lie to yourself with historical data |
+| `market-microstructure.instructions.md` | Order types, liquidity, options, settlement (T+1) |
+| `personal-investing-tax-basics.instructions.md` | Cap gains, wash sale, account types (US 2026) |
+| `multi-agent-finance-patterns.instructions.md` | Committee architecture + hardened escalation gates |
+
+Each Phase 0+1 agent `view`s the brain files relevant to its role as its first instruction (the dispatch-surface spike confirmed that Standards References is advisory only).
+
+---
+
+## Status
+
+- [x] **Phase 0 build:** data layer (`data.py`), 4 maker agents, 38 tests
+- [x] **Phase 1 build:** all 6 agents, `/analyze` slash command, `guards.py` with 19 tests
+- [ ] **Phase 0.5 smoke** (manual, requires Copilot CLI session in this repo): single `/analyze` run + Plan 002 § 0.5 disagreement checklist
+- [ ] **Phase 1.5 memo acceptance** (manual): 3 runs of `/analyze`, ≥2 passing
+- [ ] **v0.1.0 tag:** after both acceptance gates pass
+
+See `myBrain/Plans/003-plan-agent-committee-plan-b.md` for the full plan, and `docs/dispatch-surface-findings.md` for the Copilot CLI mechanics findings the architecture relies on.
