@@ -245,18 +245,34 @@ def fetch_market_snapshot(ticker: str, as_of: date | datetime) -> MarketSnapshot
 
     news_highlights = _fetch_news(ticker_upper, as_of_date)
 
-    key_financials = {
-        "market_cap": _safe_float(info.get("marketCap")),
-        "revenue_ttm": _safe_float(info.get("totalRevenue")),
-        "gross_profit_ttm": _safe_float(info.get("grossProfits")),
-    }
-    key_ratios = {
-        "pe_trailing": _safe_float(info.get("trailingPE")),
-        "ps_trailing": _safe_float(info.get("priceToSalesTrailing12Months")),
-        "pb": _safe_float(info.get("priceToBook")),
-        "gross_margin": _safe_float(info.get("grossMargins")),
-        "operating_margin": _safe_float(info.get("operatingMargins")),
-    }
+    # ---- PIT integrity ----
+    # `yfinance.Ticker(...).info` returns *current-as-of-now* fundamentals,
+    # not as-of `as_of`. Surfacing those in a snapshot dated 2024-06-01 would
+    # poison every downstream agent with look-ahead values (see brain's
+    # backtesting-methodology). Until Stage B lands true PIT extraction from
+    # the chosen 10-K's XBRL facts and (preferably) interleaved 10-Qs for
+    # true TTM, we emit explicit None + mark provenance "missing" so agents
+    # know not to fabricate around the gap.
+    # TODO(stage-b): pull PIT financials from `chosen_filing` via edgartools
+    # (revenue, gross_profit, shares_outstanding) and compute market_cap,
+    # margins, multiples. Optionally interleave 10-Qs filed before `as_of`
+    # for a real trailing-twelve-month view; if 10-K only, rename
+    # *_ttm fields to *_latest_annual to avoid misleading agents.
+    _FINANCIAL_KEYS = ("market_cap", "revenue_ttm", "gross_profit_ttm")
+    _RATIO_KEYS = (
+        "pe_trailing",
+        "ps_trailing",
+        "pb",
+        "gross_margin",
+        "operating_margin",
+    )
+    key_financials: dict[str, float | None] = {k: None for k in _FINANCIAL_KEYS}
+    key_ratios: dict[str, float | None] = {k: None for k in _RATIO_KEYS}
+    pit_source: dict[str, str] = {}
+    for k in _FINANCIAL_KEYS:
+        pit_source[f"key_financials.{k}"] = "missing"
+    for k in _RATIO_KEYS:
+        pit_source[f"key_ratios.{k}"] = "missing"
 
     snapshot = MarketSnapshot(
         ticker=ticker_upper,
@@ -275,6 +291,7 @@ def fetch_market_snapshot(ticker: str, as_of: date | datetime) -> MarketSnapshot
         ticker_return_same_window=ticker_return_ttm,
         sector_return_same_window=None,
         pit_assertion=True,
+        pit_source=pit_source,
     )
     _assert_no_lookahead(snapshot, as_of_dt)
     return snapshot

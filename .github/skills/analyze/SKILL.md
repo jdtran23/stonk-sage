@@ -118,9 +118,9 @@ Then print the published memo body to chat.
 - Do NOT publish. Do NOT copy to `examples/`.
 - The user decides whether to re-run.
 
-## Acceptance Ritual (Plan 003 §1.5)
+## Acceptance Ritual
 
-Phase 1 ship gate: run the pipeline **3 times** on the chosen acceptance tickers. Ship Phase 1 only if **≥2 of 3 runs pass the 6-item checklist** in `myBrain/Plans/002-plan-agent-committee.md` §1.6.
+Phase 1 ship gate: run the pipeline **3 times** on the chosen acceptance tickers. Ship Phase 1 only if **≥2 of 3 runs pass the 6-item coherence checklist**: recommendation matches sizing; falsification criteria are observable; specialist disagreements are real; no unsupported claims; benchmark comparison cites numbers; source_of_edge is plausibly that type.
 
 - A guard-failed run (Step 9 non-zero exit) counts as a §1.5 failure.
 - The denominator stays 3 — do NOT retry the failed run and call the retry "run 3"; that defeats the acceptance bar.

@@ -193,7 +193,7 @@ def _split_sentences(prose: str) -> Iterable[str]:
 def scan_vague_edges(prose: str) -> list[str]:
     """Return a list of offending sentences from the CIO memo prose.
 
-    Rule (per Plan 003 §1.4):
+    Rule:
         (vague phrase present AND no quantitative anchor in same sentence)
         OR (no quantitative anchor at all in any sentence)
         → vague

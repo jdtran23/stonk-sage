@@ -1,6 +1,6 @@
 """Tests for ``stonk_sage.guards``.
 
-Covers the 11 pytest cases called for in Plan 003 §1.4:
+Covers 11 pytest cases:
 1.  PASS — clean BUY memo with risk alignment + quant-anchored prose.
 2.  FAIL — Risk veto present but CIO recommended BUY.
 3.  FAIL — position_size exceeds risk sizing band cap.
@@ -138,6 +138,10 @@ def test_04_pass_risk_none_and_no_action(tmp_path: Path) -> None:
             recommendation="NO_ACTION",
             source_of_edge=None,
             position_size_pct=None,
+            conviction=2,
+            time_horizon_months=None,
+            expected_return_pct=None,
+            expected_drawdown_pct=None,
             prose_extra="## Source of Edge\nNo identifiable edge; abstaining.",
         ),
         _risk_json(sizing="NONE"),
@@ -201,6 +205,10 @@ def test_09_pass_no_action_exempt_from_vague_scan(tmp_path: Path) -> None:
             recommendation="NO_ACTION",
             source_of_edge=None,
             position_size_pct=None,
+            conviction=2,
+            time_horizon_months=None,
+            expected_return_pct=None,
+            expected_drawdown_pct=None,
             prose_extra=vague_prose,
         ),
         _risk_json(sizing="NONE"),

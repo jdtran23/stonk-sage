@@ -207,14 +207,64 @@ def test_cio_no_action_with_size_rejected() -> None:
         )
 
 
+def test_cio_no_action_with_horizon_rejected() -> None:
+    """NO_ACTION may not carry a time_horizon_months projection."""
+    with pytest.raises(ValidationError, match="time_horizon_months"):
+        _valid_memo(
+            source_of_edge=None,
+            recommendation="NO_ACTION",
+            position_size_pct=None,
+            conviction=2,
+            time_horizon_months=12,
+            expected_return_pct=None,
+            expected_drawdown_pct=None,
+        )
+
+
+def test_cio_no_action_with_expected_return_rejected() -> None:
+    """NO_ACTION may not carry an expected_return_pct projection."""
+    with pytest.raises(ValidationError, match="expected_return_pct"):
+        _valid_memo(
+            source_of_edge=None,
+            recommendation="NO_ACTION",
+            position_size_pct=None,
+            conviction=2,
+            time_horizon_months=None,
+            expected_return_pct=0.10,
+            expected_drawdown_pct=None,
+        )
+
+
+def test_cio_no_action_with_high_conviction_rejected() -> None:
+    """NO_ACTION caps conviction at 2 (investment conviction, not decision)."""
+    with pytest.raises(ValidationError, match="conviction"):
+        _valid_memo(
+            source_of_edge=None,
+            recommendation="NO_ACTION",
+            position_size_pct=None,
+            conviction=4,
+            time_horizon_months=None,
+            expected_return_pct=None,
+            expected_drawdown_pct=None,
+        )
+
+
 def test_cio_valid_no_action() -> None:
     memo = _valid_memo(
         source_of_edge=None,
         recommendation="NO_ACTION",
         position_size_pct=None,
+        conviction=2,
+        time_horizon_months=None,
+        expected_return_pct=None,
+        expected_drawdown_pct=None,
     )
     assert memo.recommendation == "NO_ACTION"
     assert memo.position_size_pct is None
+    assert memo.time_horizon_months is None
+    assert memo.expected_return_pct is None
+    assert memo.expected_drawdown_pct is None
+    assert memo.conviction == 2
 
 
 # ---------------------------------------------------------------------------

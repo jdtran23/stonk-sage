@@ -68,7 +68,7 @@ cp .env.example .env
 ### Verify
 ```pwsh
 uv run pytest -q
-# Expect: 57 passed, 1 deselected   (live network test gated behind -m live)
+# Expect: 60 passed, 1 deselected   (live network test gated behind -m live)
 ```
 
 ---
@@ -84,6 +84,8 @@ Start Copilot CLI in the `stonk-sage` working directory. Then:
 ```
 
 That dispatches the full 6-agent pipeline, runs the post-CIO guards, and (on pass) publishes the memo to `examples/AAPL_2024-06-01_<uuid>.md`. The skill prints the memo back to chat so you can read it inline.
+
+**For interpreting the memo it produces, see [`docs/interpreting-memos.md`](docs/interpreting-memos.md).**
 
 `/analyze` is a project skill at `.github/skills/analyze/SKILL.md`. It's loaded by Copilot CLI's `/skills` mechanism. (Prompt files at `.github/prompts/*.prompt.md` are a VS Code Copilot Chat feature and do not work in Copilot CLI — that was the original design and it was wrong.)
 
@@ -117,7 +119,7 @@ A clean run on `/analyze AAPL 2024-06-01` should:
 
 ### Phase 1 acceptance ritual
 
-Per Plan 003 § 1.5, the project considers itself "Phase 1 done" only when `/analyze` produces **≥2 passing memos out of 3 runs** on the same ticker + as_of, and each passing memo is coherent on the 6-item checklist in `myBrain/Plans/002-plan-agent-committee.md` § 1.6.
+Consider the project ready when `/analyze` produces **≥2 passing memos out of 3 runs** on the same ticker + as_of, and each passing memo is coherent: recommendation matches sizing; falsification criteria are observable; specialist disagreements are real; no unsupported claims; benchmark comparison cites numbers; source_of_edge is plausibly that type.
 
 ### Model availability probe
 
@@ -146,8 +148,9 @@ stonk-sage/
 │   ├── contracts.py        # pydantic schemas (MarketSnapshot, Thesis, RiskAssessment, ...)
 │   ├── data.py             # point-in-time market data fetcher
 │   └── guards.py           # post-CIO hard-rule + vague-edge guard
-├── tests/                  # 57 tests; live network tests gated behind -m live
+├── tests/                  # 60 tests; live network tests gated behind -m live
 ├── docs/
+│   ├── interpreting-memos.md          # how to read a /analyze memo (field by field, red flags, worked example)
 │   └── dispatch-surface-findings.md   # Task 0.0 findings — see for Copilot CLI mechanics
 ├── data/                   # gitignored — runtime staging
 │   ├── snapshots/
@@ -177,14 +180,4 @@ Ten finance instruction files in `.github/instructions/` (133 inline citations, 
 
 Each Phase 0+1 agent `view`s the brain files relevant to its role as its first instruction (the dispatch-surface spike confirmed that Standards References is advisory only).
 
----
-
-## Status
-
-- [x] **Phase 0 build:** data layer (`data.py`), 4 maker agents, 38 tests
-- [x] **Phase 1 build:** all 6 agents, `/analyze` skill, `guards.py` with 19 tests
-- [ ] **Phase 0.5 smoke** (manual, requires Copilot CLI session in this repo): single `/analyze` run + Plan 002 § 0.5 disagreement checklist
-- [ ] **Phase 1.5 memo acceptance** (manual): 3 runs of `/analyze`, ≥2 passing
-- [ ] **v0.1.0 tag:** after both acceptance gates pass
-
-See `myBrain/Plans/003-plan-agent-committee-plan-b.md` for the full plan, and `docs/dispatch-surface-findings.md` for the Copilot CLI mechanics findings the architecture relies on.
+See [`docs/interpreting-memos.md`](docs/interpreting-memos.md) for how to read the memos `/analyze` produces, and [`docs/dispatch-surface-findings.md`](docs/dispatch-surface-findings.md) for the Copilot CLI mechanics findings the architecture relies on.
