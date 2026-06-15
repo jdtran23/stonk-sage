@@ -62,7 +62,13 @@ The committee's load-bearing design rule is that adversarial pairs run on **diff
 
 ```
 python -m stonk_sage.data fetch <TICKER> --as-of <YYYY-MM-DD>
-#   → prints SNAPSHOT_PATH=<absolute path>; point-in-time-safe (every dated field <= as_of)
+#   → prints the snapshot path (e.g. data/snapshots/AAPL_2024-06-01.json) on its
+#     last stdout line; point-in-time-safe (every dated field <= as_of)
+
+python -m stonk_sage.data fetch <TICKER> --as-of <YYYY-MM-DD> --prices <FILE>
+#   → same, but sources prices/returns/news from a PIT-safe Alpaca price/news
+#     JSON file instead of yfinance (the analyze skill produces it via the
+#     Alpaca MCP get_stock_bars tool; falls back to yfinance when omitted)
 
 python -m stonk_sage.guards check --run-dir <RUN_DIR>
 #   → exit 0 = PASS, non-zero = FAIL with reasons printed line by line

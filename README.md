@@ -10,8 +10,8 @@ A 6-agent AI investment-research committee. The canonical pipeline runs on GitHu
 
 ```
 ┌─────────────────┐
-│ data.py         │  yfinance + edgartools, no-look-ahead invariant
-│ (no LLM)        │  → MarketSnapshot JSON
+│ data.py         │  Alpaca MCP prices (via /analyze) or yfinance fallback
+│ (no LLM)        │  + edgartools, no-look-ahead invariant → MarketSnapshot JSON
 └────────┬────────┘
          ▼
 ┌─────────────────┐
@@ -68,7 +68,7 @@ Engineers can drive the committee from either host. The committee logic, the bra
 - Python 3.12+
 - [uv](https://github.com/astral-sh/uv) (Windows ARM64: install via `pip install --user uv` to avoid the broken aarch64 native installer)
 - GitHub Copilot subscription (for the `task` tool that dispatches agents)
-- An `EDGAR_IDENTITY` for SEC fair-access compliance (`Your Name your.email@example.com`)
+- An `EDGAR_IDENTITY` for SEC fair-access compliance (`Your Name your.email@example.com`). Use a **real, conventional email** — SEC returns `403 Forbidden` for placeholder/`noreply` User-Agents (notably `*@users.noreply.github.com`); a 403 surfaces as `EdgarAccessDenied` with guidance.
 
 ### Install
 ```pwsh
@@ -79,6 +79,8 @@ uv sync
 cp .env.example .env
 # edit .env and set EDGAR_IDENTITY — the CLI auto-loads .env via python-dotenv
 ```
+
+> **Onboarding a new engineer?** See [`docs/onboarding.md`](docs/onboarding.md) for installing the Alpaca MCP server (uv/uvx, API keys, `.vscode/mcp.json`).
 
 ### Verify
 ```pwsh
@@ -123,6 +125,12 @@ python -m stonk_sage.data fetch AAPL --as-of 2024-06-01
 
 The snapshot is point-in-time-safe: every dated field is `<= as_of`. Weekends/holidays roll back to the prior trading day's close.
 
+By default prices/returns/news come from yfinance. Pass `--prices <file>` to source them from a PIT-safe Alpaca price/news JSON instead (the `/analyze` skill produces this file via the Alpaca MCP `get_stock_bars` tool — see [`docs/onboarding.md`](docs/onboarding.md)):
+
+```pwsh
+python -m stonk_sage.data fetch AAPL --as-of 2024-06-01 --prices data/runs/AAPL_2024-06-01_abc12345/alpaca_prices.json
+```
+
 ### Direct guards check
 
 ```pwsh
@@ -137,8 +145,8 @@ Exit code 0 on PASS, non-zero on FAIL. Failure reasons are printed line by line.
 
 A clean run on `/analyze AAPL 2024-06-01` should:
 
-1. **Fetch step (~5–15s):** prints `data/snapshots/AAPL_2024-06-01.json`. If `EDGAR_IDENTITY` is missing you'll see an `EdgarIdentityMissing` error here — stop and set the env var.
-2. **DA → Bull/Bear/Risk → DA-critique → CIO:** chat trace shows 6 sub-agent dispatches. Run-staging directory `data/runs/AAPL_2024-06-01_<uuid>/` accumulates `da.md`, `bull.json`, `bear.json`, `risk.json`, `da_critique.json`, `cio_draft.md`.
+1. **Fetch step (~5–15s):** the `/analyze` skill pulls prices via the Alpaca MCP into `data/runs/.../alpaca_prices.json`, then `data.py` writes `data/snapshots/AAPL_2024-06-01.json`. If `EDGAR_IDENTITY` is missing you'll see an `EdgarIdentityMissing` error here — stop and set the env var. If the Alpaca MCP is unavailable the skill falls back to yfinance.
+2. **DA → Bull/Bear/Risk → DA-critique → CIO:** chat trace shows 6 sub-agent dispatches. Run-staging directory `data/runs/AAPL_2024-06-01_<uuid>/` accumulates `alpaca_prices.json`, `da.md`, `bull.json`, `bear.json`, `risk.json`, `da_critique.json`, `cio_draft.md`.
 3. **Guards step:** prints either `guards: PASS ✅` or `guards: FAIL ❌` with reasons. **Failure is expected sometimes** — the CIO's prose drifts into vague territory, or the Risk Officer's veto isn't honored. The fix is usually to re-run with a fresh UUID; persistent failures point at the agent prompts.
 4. **On PASS:** `examples/AAPL_2024-06-01_<uuid>.md` is written, `examples/AAPL_2024-06-01_latest.md` updated, and the memo is printed back to chat.
 
@@ -177,10 +185,11 @@ stonk-sage/
 │   ├── __init__.py         # public facade
 │   ├── brain.py            # loads instruction files into agent context
 │   ├── contracts.py        # pydantic schemas (MarketSnapshot, Thesis, RiskAssessment, ...)
-│   ├── data.py             # point-in-time market data fetcher
+│   ├── data.py             # point-in-time market data fetcher (Alpaca MCP prices via --prices, else yfinance; + edgartools)
 │   └── guards.py           # post-CIO hard-rule + vague-edge guard
 ├── tests/                  # 60 tests; live network tests gated behind -m live
 ├── docs/
+│   ├── onboarding.md                  # new-engineer onboarding — install the Alpaca MCP (uv/uvx, keys, .vscode/mcp.json)
 │   ├── interpreting-memos.md          # how to read a /analyze memo (field by field, red flags, worked example)
 │   └── dispatch-surface-findings.md   # Task 0.0 findings — see for Copilot CLI mechanics
 ├── data/                   # gitignored — runtime staging

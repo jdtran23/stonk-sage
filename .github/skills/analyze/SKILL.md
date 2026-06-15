@@ -45,8 +45,12 @@ Parse `Ticker` (uppercase symbol) and `AsOfDate` (ISO date) from the freeform ar
 | `@cio` | `gpt-5.5` | All above → Markdown memo with embedded fenced ` ```json ` CIOMemo |
 
 Python helpers:
-- `python -m stonk_sage.data fetch <TICKER> --as-of <DATE>` — fetches the snapshot, prints `SNAPSHOT_PATH=<absolute path>` on stdout.
+- `python -m stonk_sage.data fetch <TICKER> --as-of <DATE>` — fetches the snapshot, prints the snapshot path on stdout. Add `--prices <file>` to source prices/returns/news from a PIT-safe Alpaca MCP price file (see Step 3); without it, yfinance is used.
 - `python -m stonk_sage.guards check --run-dir <RUN_DIR>` — validates the run artifacts. Exit 0 = pass.
+
+### Prerequisite — Alpaca MCP
+
+Step 3 calls the Alpaca MCP `get_stock_bars` / `get_news` tools. The `alpaca` MCP server must be configured and reachable (`.vscode/mcp.json`, launched via `uvx`). If it isn't available, skip straight to the **yfinance fallback** in Step 3. See [`docs/onboarding.md`](../../../docs/onboarding.md) for setup.
 
 ## 9-Step Pipeline
 
@@ -62,11 +66,82 @@ New-Item -ItemType Directory -Force -Path "data/runs/<TICKER>_<DATE>_<UUID8>" | 
 
 Store the absolute path as `RUN_DIR`.
 
-### Step 3 — Fetch snapshot
+### Step 3 — Fetch snapshot (Alpaca MCP prices → yfinance fallback)
+
+Price/return/news data come from the **Alpaca MCP** (reliable historical bars); the
+10-K filing date and fundamentals still come from `stonk_sage.data` (EDGAR). Do this:
+
+**3a. Pull PIT-safe bars via Alpaca MCP.** Call the `get_stock_bars` tool for the
+ticker and SPY together. **Try the default feed (`sip`) first, then fall back to `iex`:**
+
+```
+get_stock_bars(
+  symbols   = "<TICKER>,SPY",
+  timeframe = "1Day",
+  start     = "<AsOfDate - 400 days>",   # ISO date
+  end       = "<AsOfDate>",              # ← MUST be <= as_of (no look-ahead)
+  limit     = 10000,
+  sort      = "asc"
+)
+```
+
+> **Feed selection — important.** The free/paper data plan can query **historical**
+> SIP (full-market, all US exchanges) but **blocks recent SIP** (returns
+> `403 "subscription does not permit querying recent SIP data"`). So:
+> - **If the response contains an `error`** (the recent-SIP 403) **or zero bars**,
+>   **retry the same call with `feed = "iex"`** (free tier, all dates, but IEX-only
+>   coverage — slightly narrower highs/lows). This is the common case when `<AsOfDate>`
+>   is today or within the last ~day.
+> - **Do NOT use `feed = "delayed_sip"`** — this MCP build rejects it (`400 invalid feed`).
+> - A paid Algo Trader Plus subscription can use `sip` for recent dates too; then no
+>   fallback is needed.
+> - Record which feed actually returned the bars — you'll write it into the file (3c).
+
+> **PIT discipline — non-negotiable.** Use `get_stock_bars` with `end = <AsOfDate>`.
+> **Never** use `get_stock_latest_quote`, `get_stock_snapshot`, or `get_stock_latest_trade`
+> to populate an as-of snapshot — those return *live* data and would inject look-ahead into
+> a historical run. (Optional: pass `asof = "<AsOfDate>"` to `get_stock_bars` for
+> point-in-time symbol mapping.)
+
+**3b. (Optional) Pull recent news via Alpaca MCP**, also bounded by `end = <AsOfDate>`:
+
+```
+get_news(symbols = "<TICKER>", start = "<AsOfDate - 30 days>", end = "<AsOfDate>",
+         limit = 10, sort = "desc")
+```
+
+**3c. Assemble `<RUN_DIR>/alpaca_prices.json` with the `create` tool** (Rule #1 — news
+headlines contain quotes/`$`/specials that break shell quoting; never write this file with
+shell redirection). The `get_stock_bars` response already nests bars under a `bars` key, so
+the file is those bars, the news array, and the `feed` you actually used (`"sip"` or
+`"iex"` — recorded for provenance; `data.py` surfaces it in `pit_source.price_feed`):
+
+```json
+{
+  "bars": { "<TICKER>": [ ...bars from get_stock_bars... ], "SPY": [ ...bars... ] },
+  "news": [ ...items from get_news... ],
+  "feed": "iex"
+}
+```
+
+**3d. Build the snapshot from that file:**
+
+```powershell
+python -m stonk_sage.data fetch <TICKER> --as-of <DATE> --prices "<RUN_DIR>/alpaca_prices.json"
+```
+
+Capture stdout; the last line is the snapshot path. Store it as `SNAPSHOT_PATH`.
+
+**Fallback (yfinance).** If **both** the `sip` and `iex` attempts fail or return too few
+bars — e.g. `<DATE>` predates Alpaca's history (~2016), the symbol is unsupported, or the
+Alpaca MCP is unavailable — **omit `--prices`** and run the plain fetch instead:
+
 ```powershell
 python -m stonk_sage.data fetch <TICKER> --as-of <DATE>
 ```
-Capture stdout, parse the `SNAPSHOT_PATH=…` line, store as `SNAPSHOT_PATH`.
+
+Both forms write the same `MarketSnapshot` schema; `data.py` records the price source in
+`pit_source.price_summary` (`"alpaca"` or `"yfinance"`).
 
 ### Step 4 — Data Analyst leg
 Dispatch `@data-analyst` with model `claude-haiku-4.5`. Provide it `SNAPSHOT_PATH`. **Capture the returned text and write it to `<RUN_DIR>/da.md` using the `create` tool** — do not pipe the text through shell.
@@ -125,8 +200,9 @@ Phase 1 ship gate: run the pipeline **3 times** on the chosen acceptance tickers
 - A guard-failed run (Step 9 non-zero exit) counts as a §1.5 failure.
 - The denominator stays 3 — do NOT retry the failed run and call the retry "run 3"; that defeats the acceptance bar.
 
-## Summary of the Three Bug Fixes Baked Into This Skill
+## Summary of the Bug Fixes & Data-Source Changes Baked Into This Skill
 
 1. **Deadlock fix (Step 5/6):** Bull + Bear parallel → write files → THEN Risk Officer. Not all three parallel.
 2. **Capture-write fix (rule #1, Steps 4–8):** `create`/`edit` tool for all sub-agent output writes. Shell only for `mkdir`/`cp`.
 3. **Publish fix (Step 9):** Two plain `Copy-Item` calls. No `os.replace`, no `.tmp`, no single-line copy/replace.
+4. **Alpaca MCP price source (Step 3):** prices/returns/news come from the Alpaca MCP `get_stock_bars`/`get_news` tools (PIT-safe, `end <= as_of`), written to `alpaca_prices.json` via `create` and consumed by `data.py --prices`. Try `sip` first (full-market, works for historical dates), fall back to `iex` on the recent-SIP 403; `delayed_sip` is unsupported by this MCP build. yfinance is the final fallback. This replaces the rate-limit-prone yfinance price path that was the source of earlier fetch trouble.
